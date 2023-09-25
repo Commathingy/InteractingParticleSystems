@@ -30,21 +30,21 @@ type ColourState = devec::DeVec<Vec<Option<u32>>>;
 impl ColourState{
 
     //note that discrete starting time represents which block of time we are calculating for (since we are assuming that each horizontal pixel corresponds to a block of time)
-    fn trace_from(&self, discrete_starting_time : usize, position : isize, swap_data : &SwapState) -> Option<u32> {
+    fn backtrace_until(&self, discrete_starting_time : usize, position : isize, swap_data : &SwapState) -> Option<u32> {
+        //start at current_time and work backwards (it monotonically decreases) towards min_time
         let mut current_time = (discrete_starting_time as f32) * MAXTIME/(WIDTH as f32);
-        let max_time: f32 = ((discrete_starting_time  + 1) as f32) * MAXTIME/(WIDTH as f32);
+        let min_time: f32 = ((discrete_starting_time  - 1) as f32) * MAXTIME/(WIDTH as f32);
         let mut current_position = position;
 
-        'outer : while current_time<max_time{
+        'outer : while current_time>min_time{
             //look at the data at position current_position
             match swap_data.at_position(current_position) {
                 //if we have data here, it should be a vectors of swaps, otherwise it is a None, indicating we have not yet even created anything at that position
-                //thus we should just return None to indicate this
                 Some(inner_vec) => {
                     //we want to start at largest time, so we iterate over the vector in reverse (since it should be ordered by time already)
-                    for swap in inner_vec.iter(){
+                    for swap in inner_vec.iter().rev(){
                         //if the timestamp of the swap is less than our current time, but before the min_time, we will follow the swap
-                        if swap.timestamp > current_time && swap.timestamp < max_time {
+                        if swap.timestamp < current_time && swap.timestamp > min_time {
                             current_time=swap.timestamp; 
                             current_position = current_position + (match swap.direction {Direction::Left => -1, Direction::Right => 1});
                             //we continue on outer here as we have moved the current position, so we need to restart the for loop for this position,
@@ -56,7 +56,7 @@ impl ColourState{
                     //now that we have followed all our swaps, we have now reached some position (current_position)
                     //we check the colour at this position at the previous time step, which should hopefully have already been filled in
                     //if it has we just copy that colour, otherwise we use a None
-                    match self.at_position(current_position).unwrap().get(discrete_starting_time){
+                    match self.at_position(current_position).unwrap().get(discrete_starting_time-1){
                         Some(u) => return *u,
                         None => return None
                     };
@@ -70,11 +70,11 @@ impl ColourState{
 
     fn build_initial_state(&mut self, swap_data : &SwapState){
         //i represents the "point in time" we are calculating for
-        //note that we do require the initial state data for this to work
-        for i in 0..WIDTH-1{
+        //note that we start on 1 for i since we should already have the initial state data
+        for i in 1..WIDTH{
             //j represents the position we are calculating for
             for j in self.data_range(){
-                let value = self.trace_from(i, j, swap_data);
+                let value = self.backtrace_until(i, j, swap_data);
                 self.at_position_mut(j).unwrap().push(value);
             }
         }
@@ -149,8 +149,8 @@ fn main() {
     
     //create a random initial state
     let initial_state: Vec<Vec<Option<u32>>> = (0..HEIGHT).map(|_|{
-        let state = rng.gen_range(0..5);
-        vec!(Some(from_u8_rgb(state*50, 0, 100)))
+        let state = rng.gen_range(0..2);
+        if state == 0 {vec!(Some(from_u8_rgb(255, 255, 255)))} else {vec!(Some(from_u8_rgb(0 as u8, 0, 0)))}
     }).collect();
 
     //push that random initial state into the numberline that stores the states in a way easily readable in screen space
